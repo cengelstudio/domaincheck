@@ -6,7 +6,6 @@ import (
 	"fmt"
 	"net"
 	"os"
-	"regexp"
 	"strings"
 	"sync"
 	"time"
@@ -24,6 +23,8 @@ type DomainService struct {
 	mutex            sync.RWMutex
 	extensionsMutex  sync.RWMutex
 	domainIDCounter  int
+	history          []models.Domain
+	historyMutex     sync.RWMutex
 }
 
 // NewDomainService creates a new domain service instance
@@ -137,7 +138,7 @@ func (s *DomainService) CheckDomain(ctx context.Context, domainName string) (*mo
 		CheckedAt: time.Now(),
 	}
 
-		// DNS resolution with multiple DNS servers for reliability
+	// DNS resolution with multiple DNS servers for reliability
 	dnsServers := []string{"8.8.8.8:53", "1.1.1.1:53", "208.67.222.222:53"} // Google, Cloudflare, OpenDNS
 
 	var ips []net.IPAddr
@@ -149,9 +150,9 @@ func (s *DomainService) CheckDomain(ctx context.Context, domainName string) (*mo
 		resolver := &net.Resolver{
 			PreferGo: true,
 			Dial: func(ctx context.Context, network, address string) (net.Conn, error) {
-							d := net.Dialer{
-				Timeout: time.Second * 2,
-			}
+				d := net.Dialer{
+					Timeout: time.Second * 2,
+				}
 				return d.DialContext(ctx, network, dnsServer)
 			},
 		}
@@ -172,8 +173,8 @@ func (s *DomainService) CheckDomain(ctx context.Context, domainName string) (*mo
 		// Check if it's a real DNS error (domain doesn't exist) or network error
 		errorStr := err.Error()
 		if strings.Contains(errorStr, "no such host") ||
-		   strings.Contains(errorStr, "NXDOMAIN") ||
-		   strings.Contains(errorStr, "server misbehaving") {
+			strings.Contains(errorStr, "NXDOMAIN") ||
+			strings.Contains(errorStr, "server misbehaving") {
 			domain.Available = true
 			domain.DNSResolved = false
 			domain.Status = "Available"
@@ -204,6 +205,9 @@ func (s *DomainService) CheckDomain(ctx context.Context, domainName string) (*mo
 
 	// Store domain check result
 	s.storeDomainResult(*domain)
+
+	// Add to history
+	s.AddToHistory(domain)
 
 	response := &models.DomainCheckResponse{
 		Domain:       domain,
@@ -298,21 +302,20 @@ func (s *DomainService) CheckMultipleDomains(ctx context.Context, domains []stri
 
 // GetDomainHistory returns checked domain history
 func (s *DomainService) GetDomainHistory() []models.Domain {
-	s.mutex.RLock()
-	defer s.mutex.RUnlock()
+	s.historyMutex.RLock()
+	defer s.historyMutex.RUnlock()
 
-	// Return copy of slice
-	history := make([]models.Domain, len(s.checkedDomains))
-	copy(history, s.checkedDomains)
-	return history
+	// Return a copy to avoid race conditions
+	result := make([]models.Domain, len(s.history))
+	copy(result, s.history)
+	return result
 }
 
 // ClearHistory clears domain check history
 func (s *DomainService) ClearHistory() {
-	s.mutex.Lock()
-	defer s.mutex.Unlock()
-
-	s.checkedDomains = make([]models.Domain, 0)
+	s.historyMutex.Lock()
+	defer s.historyMutex.Unlock()
+	s.history = []models.Domain{}
 }
 
 // storeDomainResult stores domain check result
@@ -333,150 +336,172 @@ func (s *DomainService) getNextDomainID() int {
 	return id
 }
 
-// CheckAllExtensions checks domain name with all available extensions
+// CheckAllExtensions checks a domain name with all available extensions
 func (s *DomainService) CheckAllExtensions(ctx context.Context, domainName string) (*models.AllExtensionsCheckResult, error) {
 	startTime := time.Now()
 
-	// Sanitize domain name (remove any existing extension)
-	domainName = utils.SanitizeDomain(domainName)
-
-	// Remove any extension if already provided
-	if strings.Contains(domainName, ".") {
-		parts := strings.Split(domainName, ".")
-		domainName = parts[0]
-	}
-
-	// Validate domain name format (without extension)
-	if domainName == "" || !regexp.MustCompile(`^[a-zA-Z0-9]([a-zA-Z0-9\-]{0,61}[a-zA-Z0-9])?$`).MatchString(domainName) {
-		return nil, fmt.Errorf("invalid domain name format: %s", domainName)
-	}
-
-	// Get all valid extensions
+	// Get all extensions
 	extensions := s.GetValidExtensions()
+	totalExtensions := len(extensions)
 
-	// Create domains list
-	domains := make([]string, 0, len(extensions))
-	for _, ext := range extensions {
-		domains = append(domains, domainName+ext)
-	}
-
-	// Check all domains concurrently
-	results, err := s.CheckMultipleDomains(ctx, domains)
-	if err != nil {
-		return nil, fmt.Errorf("failed to check domains: %w", err)
-	}
-
-	// Convert pointer slice to value slice
-	allResults := make([]models.DomainCheckResponse, len(results))
-	for i, result := range results {
-		allResults[i] = *result
-	}
-
-	// Analyze results
+	// Create result structure
 	result := &models.AllExtensionsCheckResult{
-		DomainName:         domainName,
-		TotalExtensions:    len(extensions),
-		CheckedAt:         time.Now(),
-		TotalTime:         time.Since(startTime).Milliseconds(),
-		AvailableDomains:   make([]models.DomainCheckResponse, 0),
-		UnavailableDomains: make([]models.DomainCheckResponse, 0),
-		ErrorDomains:       make([]models.DomainCheckResponse, 0),
-		AllResults:         allResults,
+		DomainName:       domainName,
+		TotalExtensions:  totalExtensions,
+		AvailableCount:   0,
+		UnavailableCount: 0,
+		ErrorCount:       0,
+		TotalTime:        0,
+		AllResults:       []models.DomainCheckResponse{},
+		AvailableDomains: []models.DomainCheckResponse{},
+		UnavailableDomains: []models.DomainCheckResponse{},
+		Summary: models.ExtensionCheckSummary{
+			RecommendedDomains:      []string{},
+			AlternativeSuggestions:  []string{},
+		},
 	}
 
-	// Categorize results
-	var fastestDomain, slowestDomain *models.Domain
-	popularExtensions := []string{".com", ".net", ".org", ".io", ".co", ".app", ".dev"}
-	popularAvailable := make([]string, 0)
+	// Create channels for concurrent processing
+	results := make(chan models.DomainCheckResponse, totalExtensions)
+	errors := make(chan error, totalExtensions)
 
-	for _, domainResult := range results {
-		if domainResult.Domain.Error != "" {
-			result.ErrorDomains = append(result.ErrorDomains, *domainResult)
-			result.ErrorCount++
-		} else if domainResult.Domain.Available {
-			result.AvailableDomains = append(result.AvailableDomains, *domainResult)
+	// Start concurrent domain checks
+	semaphore := make(chan struct{}, s.cfg.Domain.MaxConcurrentChecks)
+	var wg sync.WaitGroup
+
+	for _, ext := range extensions {
+		wg.Add(1)
+		go func(extension string) {
+			defer wg.Done()
+			semaphore <- struct{}{} // Acquire semaphore
+			defer func() { <-semaphore }() // Release semaphore
+
+			fullDomain := domainName + "." + extension
+			start := time.Now()
+
+			checkResult, err := s.CheckDomain(ctx, fullDomain)
+			responseTime := time.Since(start).Milliseconds()
+
+			if err != nil {
+				errors <- err
+				return
+			}
+
+			// Update response time
+			checkResult.Domain.ResponseTime = responseTime
+
+			// Add to history
+			s.AddToHistory(checkResult.Domain)
+
+			results <- *checkResult
+		}(ext)
+	}
+
+	// Close channels when all goroutines complete
+	go func() {
+		wg.Wait()
+		close(results)
+		close(errors)
+	}()
+
+	// Process results
+	for resultItem := range results {
+		result.AllResults = append(result.AllResults, resultItem)
+
+		if resultItem.Domain.Status == "Available" {
 			result.AvailableCount++
-
-			// Check if it's a popular extension
-			for _, popularExt := range popularExtensions {
-				if domainResult.Domain.Extension == popularExt {
-					popularAvailable = append(popularAvailable, domainResult.Domain.Name)
-					break
-				}
-			}
+			result.AvailableDomains = append(result.AvailableDomains, resultItem)
+			result.Summary.RecommendedDomains = append(result.Summary.RecommendedDomains, resultItem.Domain.Name)
 		} else {
-			result.UnavailableDomains = append(result.UnavailableDomains, *domainResult)
 			result.UnavailableCount++
-		}
-
-		// Track fastest and slowest responses
-		if domainResult.Domain.Error == "" {
-			if fastestDomain == nil || domainResult.Domain.ResponseTime < fastestDomain.ResponseTime {
-				fastestDomain = domainResult.Domain
-			}
-			if slowestDomain == nil || domainResult.Domain.ResponseTime > slowestDomain.ResponseTime {
-				slowestDomain = domainResult.Domain
-			}
+			result.UnavailableDomains = append(result.UnavailableDomains, resultItem)
 		}
 	}
 
-	// Generate recommendations
-	recommendedDomains := make([]string, 0)
-	alternativeSuggestions := make([]string, 0)
-
-	// Add top available popular domains to recommendations
-	for _, domain := range popularAvailable {
-		if len(recommendedDomains) < 5 {
-			recommendedDomains = append(recommendedDomains, domain)
-		}
+	// Process errors
+	for range errors {
+		result.ErrorCount++
 	}
 
-	// Add other available domains to recommendations if needed
-	for _, domainResult := range result.AvailableDomains {
-		if len(recommendedDomains) < 10 {
-			alreadyAdded := false
-			for _, rec := range recommendedDomains {
-				if rec == domainResult.Domain.Name {
-					alreadyAdded = true
-					break
-				}
-			}
-			if !alreadyAdded {
-				recommendedDomains = append(recommendedDomains, domainResult.Domain.Name)
-			}
-		}
-	}
+	// Calculate total time
+	result.TotalTime = time.Since(startTime).Milliseconds()
 
 	// Generate alternative suggestions
-	if len(result.AvailableDomains) < 5 {
-		suggestions := []string{
-			domainName + "app",
-			domainName + "pro",
-			domainName + "online",
-			domainName + "digital",
-			domainName + "tech",
-			"get" + domainName,
-			"my" + domainName,
-			domainName + "hub",
-			domainName + "zone",
-			domainName + "lab",
-		}
-
-		for _, suggestion := range suggestions {
-			if len(alternativeSuggestions) < 5 {
-				alternativeSuggestions = append(alternativeSuggestions, suggestion+".com")
-			}
-		}
-	}
-
-	// Build summary
-	result.Summary = models.ExtensionCheckSummary{
-		PopularAvailable:       popularAvailable,
-		RecommendedDomains:     recommendedDomains,
-		AlternativeSuggestions: alternativeSuggestions,
-		FastestResponse:        fastestDomain,
-		SlowestResponse:        slowestDomain,
-	}
+	result.Summary.AlternativeSuggestions = s.generateAlternativeSuggestions(domainName)
 
 	return result, nil
+}
+
+// GetWhoisInfo retrieves WHOIS information for a domain
+func (s *DomainService) GetWhoisInfo(ctx context.Context, domain string) (*models.WhoisInfo, error) {
+	// Simple WHOIS lookup using net package
+	// Note: This is a basic implementation. For production, consider using a dedicated WHOIS library
+	whoisInfo := &models.WhoisInfo{
+		Domain:    domain,
+		CheckedAt: time.Now(),
+	}
+
+	// Try to get basic domain information
+	ips, err := net.LookupIP(domain)
+	if err == nil && len(ips) > 0 {
+		whoisInfo.Status = []string{"Active"}
+	}
+
+	// Get nameservers
+	ns, err := net.LookupNS(domain)
+	if err == nil {
+		for _, n := range ns {
+			whoisInfo.NameServers = append(whoisInfo.NameServers, n.Host)
+		}
+	}
+
+	// For a more comprehensive WHOIS lookup, you would need to:
+	// 1. Connect to the appropriate WHOIS server for the TLD
+	// 2. Send WHOIS query
+	// 3. Parse the response
+	// This is a simplified version for demonstration
+
+	return whoisInfo, nil
+}
+
+// AddToHistory adds a domain check result to history
+func (s *DomainService) AddToHistory(domain *models.Domain) {
+	s.historyMutex.Lock()
+	defer s.historyMutex.Unlock()
+
+	// Add to beginning of slice
+	s.history = append([]models.Domain{*domain}, s.history...)
+
+	// Keep only last 1000 entries
+	if len(s.history) > 1000 {
+		s.history = s.history[:1000]
+	}
+}
+
+// generateAlternativeSuggestions generates alternative domain suggestions
+func (s *DomainService) generateAlternativeSuggestions(domainName string) []string {
+	suggestions := []string{
+		domainName + "app",
+		domainName + "pro",
+		domainName + "online",
+		domainName + "digital",
+		domainName + "tech",
+		"get" + domainName,
+		"my" + domainName,
+		domainName + "hub",
+		domainName + "zone",
+		domainName + "lab",
+	}
+
+	// Return first 5 suggestions
+	if len(suggestions) > 5 {
+		suggestions = suggestions[:5]
+	}
+
+	// Add .com extension
+	for i, suggestion := range suggestions {
+		suggestions[i] = suggestion + ".com"
+	}
+
+	return suggestions
 }

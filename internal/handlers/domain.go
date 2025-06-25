@@ -261,3 +261,32 @@ func (h *DomainHandler) ReloadExtensions(c *gin.Context) {
 		Message: "Extensions reloaded successfully",
 	})
 }
+
+// GetWhoisInfo handles WHOIS information requests
+func (h *DomainHandler) GetWhoisInfo(c *gin.Context) {
+	domain := c.Param("domain")
+	if domain == "" {
+		c.JSON(http.StatusBadRequest, models.APIResponse{
+			Success: false,
+			Message: "Domain parameter is required",
+		})
+		return
+	}
+
+	// Get WHOIS information
+	whoisInfo, err := h.domainService.GetWhoisInfo(c.Request.Context(), domain)
+	if err != nil {
+		c.JSON(http.StatusBadRequest, models.APIResponse{
+			Success: false,
+			Message: "Failed to get WHOIS information",
+			Error:   err.Error(),
+		})
+		return
+	}
+
+	c.JSON(http.StatusOK, models.APIResponse{
+		Success: true,
+		Data:    whoisInfo,
+		Message: "WHOIS information retrieved successfully",
+	})
+}

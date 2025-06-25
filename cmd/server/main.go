@@ -36,9 +36,10 @@ func main() {
 
 	// Initialize handlers
 	domainHandler := handlers.NewDomainHandler(domainService)
+	wsHandler := handlers.NewWebSocketHandler(domainService)
 
 	// Setup router
-	router := setupRouter(cfg, domainHandler)
+	router := setupRouter(cfg, domainHandler, wsHandler)
 
 	// Setup server
 	srv := &http.Server{
@@ -78,7 +79,7 @@ func main() {
 	log.Println("✅ Server exited")
 }
 
-func setupRouter(cfg *config.Config, domainHandler *handlers.DomainHandler) *gin.Engine {
+func setupRouter(cfg *config.Config, domainHandler *handlers.DomainHandler, wsHandler *handlers.WebSocketHandler) *gin.Engine {
 	router := gin.New()
 
 	// Middleware
@@ -124,43 +125,14 @@ func setupRouter(cfg *config.Config, domainHandler *handlers.DomainHandler) *gin
 					"check":      "POST /api/check-domain",
 					"history":    "GET /api/domains",
 					"extensions": "GET /api/v1/extensions",
+					"websocket":  "WS /ws",
 				},
 			})
 		})
 	}
 
-	// API routes
-	api := router.Group("/api/v1")
-	{
-		// Health check
-		api.GET("/health", domainHandler.HealthCheck)
-
-		// Domain operations
-		domains := api.Group("/domains")
-		{
-			domains.POST("/check", domainHandler.CheckDomain)
-			domains.POST("/check-all-extensions", domainHandler.CheckAllExtensions)
-			domains.POST("/check-multiple", domainHandler.CheckMultipleDomains)
-			domains.GET("/history", domainHandler.GetDomainHistory)
-			domains.DELETE("/history", domainHandler.ClearHistory)
-		}
-
-		// Extensions management
-		extensions := api.Group("/extensions")
-		{
-			extensions.GET("/", domainHandler.GetValidExtensions)
-			extensions.POST("/reload", domainHandler.ReloadExtensions)
-		}
-	}
-
-	// Backward compatibility routes (v1 without version)
-	apiV0 := router.Group("/api")
-	{
-		apiV0.GET("/health", domainHandler.HealthCheck)
-		apiV0.POST("/check-domain", domainHandler.CheckDomain)
-		apiV0.POST("/check-all-extensions", domainHandler.CheckAllExtensions)
-		apiV0.GET("/domains", domainHandler.GetDomainHistory)
-	}
+	// Setup all API routes
+	handlers.SetupRoutes(router, cfg, domainHandler, wsHandler)
 
 	return router
 }

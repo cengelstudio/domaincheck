@@ -61,3 +61,6 @@ domaincheck-darwin-arm64
 
 # Additional file to ignore
 domaincheck-dist.tar.gz
+
+*.pid
+server

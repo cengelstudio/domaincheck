@@ -82,3 +82,49 @@ type HealthResponse struct {
 	Uptime      string    `json:"uptime"`
 	Environment string    `json:"environment"`
 }
+
+// WebSocketMessage represents a WebSocket message
+type WebSocketMessage struct {
+	Type    string      `json:"type"`
+	Data    interface{} `json:"data"`
+	Message string      `json:"message,omitempty"`
+}
+
+// WebSocketDomainCheck represents a domain check result for WebSocket
+type WebSocketDomainCheck struct {
+	Domain       string `json:"domain"`
+	Status       string `json:"status"`
+	IP           string `json:"ip,omitempty"`
+	ResponseTime int64  `json:"response_time_ms"`
+	CheckedAt    string `json:"checked_at"`
+}
+
+// WebSocketBulkProgress represents bulk check progress
+type WebSocketBulkProgress struct {
+	DomainName        string                    `json:"domain_name"`
+	TotalExtensions   int                       `json:"total_extensions"`
+	CheckedCount      int                       `json:"checked_count"`
+	AvailableCount    int                       `json:"available_count"`
+	UnavailableCount  int                       `json:"unavailable_count"`
+	ErrorCount        int                       `json:"error_count"`
+	CurrentDomain     *WebSocketDomainCheck     `json:"current_domain,omitempty"`
+	AvailableDomains  []WebSocketDomainCheck    `json:"available_domains"`
+	UnavailableDomains []WebSocketDomainCheck   `json:"unavailable_domains"`
+	IsComplete        bool                      `json:"is_complete"`
+	TotalTime         int64                     `json:"total_time_ms"`
+}
+
+// WhoisInfo represents WHOIS information for a domain
+type WhoisInfo struct {
+	Domain         string    `json:"domain"`
+	Registrar      string    `json:"registrar,omitempty"`
+	CreationDate   string    `json:"creation_date,omitempty"`
+	ExpirationDate string    `json:"expiration_date,omitempty"`
+	UpdatedDate    string    `json:"updated_date,omitempty"`
+	NameServers    []string  `json:"name_servers,omitempty"`
+	Status         []string  `json:"status,omitempty"`
+	AdminContact   string    `json:"admin_contact,omitempty"`
+	TechContact    string    `json:"tech_contact,omitempty"`
+	RawData        string    `json:"raw_data,omitempty"`
+	CheckedAt      time.Time `json:"checked_at"`
+}

@@ -1,0 +1,34 @@
+FROM golang:1.19-alpine
+
+# Install necessary packages
+RUN apk add --no-cache \
+    nodejs \
+    npm \
+    git \
+    bash
+
+WORKDIR /app
+
+# Copy go mod files
+COPY go.mod go.sum ./
+RUN go mod download
+
+# Copy package files for frontend
+COPY frontend/package*.json ./frontend/
+WORKDIR /app/frontend
+RUN npm install
+
+# Back to root
+WORKDIR /app
+
+# Copy source code
+COPY . .
+
+# Install air for hot reload
+RUN go install github.com/cosmtrek/air@latest
+
+# Expose ports
+EXPOSE 8080 3000
+
+# Start development servers
+CMD ["bash", "-c", "cd frontend && npm run serve & cd .. && air"]
