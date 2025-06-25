@@ -17,14 +17,14 @@ import (
 
 // DomainService handles domain checking operations
 type DomainService struct {
-	cfg              *config.Config
-	validExtensions  map[string]bool
-	checkedDomains   []models.Domain
-	mutex            sync.RWMutex
-	extensionsMutex  sync.RWMutex
-	domainIDCounter  int
-	history          []models.Domain
-	historyMutex     sync.RWMutex
+	cfg             *config.Config
+	validExtensions map[string]bool
+	checkedDomains  []models.Domain
+	mutex           sync.RWMutex
+	extensionsMutex sync.RWMutex
+	domainIDCounter int
+	history         []models.Domain
+	historyMutex    sync.RWMutex
 }
 
 // NewDomainService creates a new domain service instance
@@ -346,18 +346,18 @@ func (s *DomainService) CheckAllExtensions(ctx context.Context, domainName strin
 
 	// Create result structure
 	result := &models.AllExtensionsCheckResult{
-		DomainName:       domainName,
-		TotalExtensions:  totalExtensions,
-		AvailableCount:   0,
-		UnavailableCount: 0,
-		ErrorCount:       0,
-		TotalTime:        0,
-		AllResults:       []models.DomainCheckResponse{},
-		AvailableDomains: []models.DomainCheckResponse{},
+		DomainName:         domainName,
+		TotalExtensions:    totalExtensions,
+		AvailableCount:     0,
+		UnavailableCount:   0,
+		ErrorCount:         0,
+		TotalTime:          0,
+		AllResults:         []models.DomainCheckResponse{},
+		AvailableDomains:   []models.DomainCheckResponse{},
 		UnavailableDomains: []models.DomainCheckResponse{},
 		Summary: models.ExtensionCheckSummary{
-			RecommendedDomains:      []string{},
-			AlternativeSuggestions:  []string{},
+			RecommendedDomains:     []string{},
+			AlternativeSuggestions: []string{},
 		},
 	}
 
@@ -373,7 +373,7 @@ func (s *DomainService) CheckAllExtensions(ctx context.Context, domainName strin
 		wg.Add(1)
 		go func(extension string) {
 			defer wg.Done()
-			semaphore <- struct{}{} // Acquire semaphore
+			semaphore <- struct{}{}        // Acquire semaphore
 			defer func() { <-semaphore }() // Release semaphore
 
 			fullDomain := domainName + "." + extension

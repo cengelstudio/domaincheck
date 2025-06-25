@@ -130,15 +130,15 @@ func (h *WebSocketHandler) performBulkCheckWithProgress(conn *websocket.Conn, do
 	totalExtensions := len(extensions)
 
 	progress := models.WebSocketBulkProgress{
-		DomainName:       domainName,
-		TotalExtensions:  totalExtensions,
-		CheckedCount:     0,
-		AvailableCount:   0,
-		UnavailableCount: 0,
-		ErrorCount:       0,
-		AvailableDomains: []models.WebSocketDomainCheck{},
+		DomainName:         domainName,
+		TotalExtensions:    totalExtensions,
+		CheckedCount:       0,
+		AvailableCount:     0,
+		UnavailableCount:   0,
+		ErrorCount:         0,
+		AvailableDomains:   []models.WebSocketDomainCheck{},
 		UnavailableDomains: []models.WebSocketDomainCheck{},
-		IsComplete:       false,
+		IsComplete:         false,
 	}
 
 	// Create channels for concurrent processing
@@ -153,7 +153,7 @@ func (h *WebSocketHandler) performBulkCheckWithProgress(conn *websocket.Conn, do
 		wg.Add(1)
 		go func(extension string) {
 			defer wg.Done()
-			semaphore <- struct{}{} // Acquire semaphore
+			semaphore <- struct{}{}        // Acquire semaphore
 			defer func() { <-semaphore }() // Release semaphore
 
 			fullDomain := domainName + "." + extension
