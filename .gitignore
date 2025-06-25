@@ -1,0 +1,63 @@
+# Go
+/dist/
+*.exe
+*.exe~
+*.dll
+*.so
+*.dylib
+*.test
+*.out
+*.log
+*.tmp
+*.swp
+*.DS_Store
+*.idea/
+*.vscode/
+
+# Dependency directories
+vendor/
+node_modules/
+
+# Build output
+/build/
+/frontend/dist/
+/frontend/node_modules/
+
+# Configs & secrets
+.env
+.env.*
+*.local.yaml
+*.secret.yaml
+
+# OS
+.DS_Store
+Thumbs.db
+
+# Logs
+*.log
+logs/
+
+# Test
+coverage/
+*.coverprofile
+*.testresult
+
+# Misc
+*.bak
+*.old
+*.orig
+*.rej
+
+# Scripts
+/scripts/*.log
+/scripts/*.pid
+
+# Go binaries (root)
+domaincheck
+domaincheck-linux-amd64
+domaincheck-windows-amd64.exe
+domaincheck-darwin-amd64
+domaincheck-darwin-arm64
+
+# Additional file to ignore
+domaincheck-dist.tar.gz

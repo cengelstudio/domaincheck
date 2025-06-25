@@ -1,0 +1,30 @@
+server:
+  port: ":8080"
+  host: "localhost"
+  read_timeout: 60s
+  write_timeout: 60s
+
+cors:
+  allowed_origins:
+    - "http://localhost:3000"
+    - "http://localhost:8080"
+  allowed_methods:
+    - "GET"
+    - "POST"
+    - "PUT"
+    - "DELETE"
+    - "OPTIONS"
+  allowed_headers:
+    - "Origin"
+    - "Content-Type"
+    - "Accept"
+    - "Authorization"
+
+domain:
+  extensions_file: "./data/domain_extensions.txt"
+  timeout: 3s
+  max_concurrent_checks: 20
+
+logging:
+  level: "info"
+  format: "json"
